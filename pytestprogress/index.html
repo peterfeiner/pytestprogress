@@ -1,0 +1,123 @@
+<html>
+<head>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+<script>
+
+var nodes = {};
+
+function collected_success(items) {
+    $('#status').text('Collected ' + items.length + ' tests:');
+    $('#all').empty();
+    console.log(items);
+    nodes = {};
+    var i;
+    for (i = 0; i < items.length; i++)
+    {
+        var id = items[i].id;
+        nodes[id] = {id: id, state: 'collected', running_node: null};
+        var li = node_li(nodes[id]);
+        //$('#all').append(li);
+    }
+}
+
+function collected_error(jqXHR, textStatus, errorThrown) {
+    setTimeout(update_collected, 1000);
+}
+
+function update_collected() {
+    $.ajax({
+        url: 'collected.json',
+        success: collected_success,
+        error: collected_error,
+    });
+}
+
+var next_event = 0;
+
+function node_li(node) {
+    var li = $('<li>');
+    var a = $('<a>');
+    a.attr('href', node.id + '.txt');
+    a.append(node.id)
+    li.append(a);
+    return li
+}
+
+function events_success(events) {
+    console.log(events);
+
+    for (; next_event < events.length; next_event++) {
+        var e = events[next_event];
+        if (e == null)
+            continue;
+        if (e == 'done') {
+            $('#status').text('Done');
+        }
+        var node = nodes[e.id];
+        if (e.outcome != 'passed' && node.state != 'failed') {
+            node.state = 'failed'
+            if (node.running_node != null) {
+                node.running_node.remove()
+                node.running_node = null;
+            }
+            $('#failed').append(node_li(node));
+        } else if (node.state == 'collected') {
+            node.state = 'running'
+            var li = node_li(node);
+            node.running_node = li;
+            $('#running').append(li);
+        } else if (node.state == 'running') {
+            if (e.when == 'teardown') {
+                node.state = 'passed';
+                var li = $('<li>');
+                li.append(node.id);
+                node.running_node.remove()
+                node.running_node = null;
+                //$('#passed').append(li);
+            }
+        } else if (node.state == 'passed') {
+
+        } else if (node.state == 'failed') {
+
+        } else {
+            console.error('unknown state ' + node.state);
+        }
+    }
+
+    setTimeout(update_events, 1000);
+}
+
+function events_error(jqXHR, textStatus, errorThrown) {
+    setTimeout(update_events, 1000);
+}
+
+function update_events(events) {
+    $.ajax({
+        url: 'events.json',
+        success: events_success,
+        error: events_error,
+    });
+}
+
+$(document).ready(function() {
+    update_collected();
+    update_events();
+});
+
+</script>
+</head>
+<body>
+<p id="status">Collecting tests ... </p>
+<ul id="all">
+</ul>
+<p>Running:</p>
+<ul id="running">
+</ul>
+<p>Passed:</p>
+<ul id="passed">
+</ul>
+<p>Failed:</p>
+<ul id="failed">
+</ul>
+</body>
+</html>
