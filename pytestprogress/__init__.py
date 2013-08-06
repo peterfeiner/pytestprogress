@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 
+import py.io
 import pytest
 
 def pytest_addoption(parser):
@@ -84,6 +85,13 @@ def pytest_runtest_logstart(nodeid, location):
 def pytest_runtest_logreport(report):
     global session_root
     if session_root != None and root_process:
+        if report.longrepr != None:
+            with open(session_path('%s.txt' % report.nodeid.replace('/', '.')), 'a') as f:
+                header = '%s %s %s' % (report.nodeid, report.when, report.outcome)
+                f.write('%s\n' % ('X' * len(header)))
+                f.write('%s\n' % header)
+                f.write('%s\n' % ('v' * len(header)))
+                report.toterminal(py.io.TerminalWriter(f))
         emit_event(report.nodeid.replace('/', '.'), report.when, report.outcome)
 
 orig_fds = None
