@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name='pytest-progress',
+    name='pytestprogress',
     packages=['pytestprogress'],
     entry_points={
         'pytest11': ['pytestprogress = pytestprogress']
