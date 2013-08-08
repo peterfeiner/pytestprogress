@@ -3,24 +3,32 @@
 <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
 <script>
 
-var nodes = {};
+var nodes = null;
+var delayed_events = null;
 
 function collected_success(items) {
-    $('#status').text('Collected ' + items.length + ' tests:');
-    $('#all').empty();
-    console.log(items);
+    $('#collect_status').text('Collected ' + items.length + ' tests');
     nodes = {};
     var i;
     for (i = 0; i < items.length; i++)
     {
         var id = items[i].id;
-        nodes[id] = {id: id, state: 'collected', running_node: null};
-        var li = node_li(nodes[id]);
-        //$('#all').append(li);
+        var node = {id: id, state: 'collected', running_node: null, pending_node: null};
+        var li = node_li(node);
+        node.pending_node = li;
+        nodes[id] = node;
+        $('#pending').append(li);
+    }
+    
+    if (delayed_events != null) {
+        console.log('dispatching delayed events');
+        events_success(delayed_events);
+        delayed_events = null;
     }
 }
 
 function collected_error(jqXHR, textStatus, errorThrown) {
+    $('#collect_status').text('Collection failed, retrying ...');
     setTimeout(update_collected, 1000);
 }
 
@@ -43,18 +51,31 @@ function node_li(node) {
     return li
 }
 
-function events_success(events) {
-    console.log(events);
+var ascii_spinner_sequence = ['...', '', '.', '..'];
+var event_success_count = 0;
 
+function events_success(events) {
+    var event_status = 'Processing events ' + ascii_spinner_sequence[event_success_count];
+    event_success_count += 1;
+    event_success_count %= ascii_spinner_sequence.length;
+    $('#event_status').text(event_status)
+    if (nodes == null) {
+        delayed_events = events;
+        return;
+    }
     for (; next_event < events.length; next_event++) {
         var e = events[next_event];
         if (e == null)
             continue;
         if (e == 'done') {
-            $('#status').text('Done');
+            $('#event_status').text('Processed final event');
+            return;
         }
         var node = nodes[e.id];
-        if (e.outcome != 'passed' && node.state != 'failed') {
+        if (node == undefined) {
+            console.error('event with unknown id ' + e.id);
+            return;
+        } else if (e.outcome != 'passed' && node.state != 'failed') {
             node.state = 'failed'
             if (node.running_node != null) {
                 node.running_node.remove()
@@ -64,16 +85,17 @@ function events_success(events) {
         } else if (node.state == 'collected') {
             node.state = 'running'
             var li = node_li(node);
+            node.pending_node.remove();
+            node.pending_node = null;
             node.running_node = li;
             $('#running').append(li);
         } else if (node.state == 'running') {
             if (e.when == 'teardown') {
                 node.state = 'passed';
-                var li = $('<li>');
-                li.append(node.id);
                 node.running_node.remove()
                 node.running_node = null;
-                //$('#passed').append(li);
+                var li = node_li(node);
+                $('#passed').append(li);
             }
         } else if (node.state == 'passed') {
 
@@ -88,6 +110,7 @@ function events_success(events) {
 }
 
 function events_error(jqXHR, textStatus, errorThrown) {
+    $('#collect_status').text('Event retrieval failed, retrying ...');
     setTimeout(update_events, 1000);
 }
 
@@ -107,17 +130,19 @@ $(document).ready(function() {
 </script>
 </head>
 <body>
-<p id="status">Collecting tests ... </p>
-<ul id="all">
-</ul>
+<p id="collect_status">Collecting tests ...</p>
+<p id="event_status">Waiting for events ...</p>
 <p>Running:</p>
 <ul id="running">
+</ul>
+<p>Failed:</p>
+<ul id="failed">
 </ul>
 <p>Passed:</p>
 <ul id="passed">
 </ul>
-<p>Failed:</p>
-<ul id="failed">
+<p>Pending:</p>
+<ul id="pending">
 </ul>
 </body>
 </html>
