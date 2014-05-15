@@ -3,23 +3,28 @@
 <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
 <script>
 
+var all_pending = null;
+var all_collected = null;
 var nodes = null;
 var delayed_events = null;
 
 function collected_success(items) {
     $('#collect_status').text('Collected ' + items.length + ' tests');
+    all_pending = {};
+    all_collected = {};
     nodes = {};
     var i;
     for (i = 0; i < items.length; i++)
     {
         var id = items[i].id;
-        var node = {id: id, state: 'collected', running_node: null, pending_node: null};
-        var li = node_li(node);
-        node.pending_node = li;
-        nodes[id] = node;
-        $('#pending').append(li);
+        var pending = {id: id, li: null};
+        pending.li = $('<li>')
+        pending.li.append(pending.id)
+        all_pending[id] = pending;
+        all_collected[id] = true;
+        $('#pending').append(pending.li);
     }
-    
+
     if (delayed_events != null) {
         console.log('dispatching delayed events');
         events_success(delayed_events);
@@ -45,8 +50,9 @@ var next_event = 0;
 function node_li(node) {
     var li = $('<li>');
     var a = $('<a>');
-    a.attr('href', node.id + '.txt');
-    a.append(node.id)
+    var id_pid = node.id + '@' + node.pid
+    a.attr('href', id_pid + '.txt');
+    a.append(node.id + ' [' + node.pid + ']')
     li.append(a);
     return li
 }
@@ -65,35 +71,49 @@ function events_success(events) {
     }
     for (; next_event < events.length; next_event++) {
         var e = events[next_event];
+
         if (e == null)
             continue;
+
         if (e == 'done') {
             $('#event_status').text('Processed final event');
             return;
         }
-        var node = nodes[e.id];
-        if (node == undefined) {
+
+        if (all_collected[e.id] == undefined) {
             console.error('event with unknown id ' + e.id);
             return;
-        } else if (e.outcome != 'passed' && node.state != 'failed') {
+        }
+
+        var pending = all_pending[e.id];
+        if (pending != undefined) {
+           pending.li.remove();
+        }
+
+        var id_pid = e.id + '@' + e.pid
+        var node = nodes[id_pid];
+        if (node == undefined) {
+            node = {id: e.id, pid: e.pid, state: 'collected', running_li: null}
+            nodes[id_pid] = node;
+        }
+
+        if (e.outcome != 'passed' && node.state != 'failed') {
             node.state = 'failed'
-            if (node.running_node != null) {
-                node.running_node.remove()
-                node.running_node = null;
+            if (node.running_li != null) {
+                node.running_li.remove()
+                node.running_li = null;
             }
             $('#failed').append(node_li(node));
         } else if (node.state == 'collected') {
             node.state = 'running'
             var li = node_li(node);
-            node.pending_node.remove();
-            node.pending_node = null;
-            node.running_node = li;
+            node.running_li = li;
             $('#running').append(li);
         } else if (node.state == 'running') {
             if (e.when == 'teardown') {
                 node.state = 'passed';
-                node.running_node.remove()
-                node.running_node = null;
+                node.running_li.remove()
+                node.running_li = null;
                 var li = node_li(node);
                 $('#passed').append(li);
             }

@@ -69,30 +69,45 @@ def pytest_collection_finish(session):
     if not session.config.option.progress:
         return
     create_json_list_file('collected.json',
-                          [{'id': item.nodeid.replace('/', '.')} for item in session.items])
+                          [{'id': clean_id(item.nodeid)} for item in session.items])
 
-def emit_event(nodeid, when, outcome):
+def clean_id(nodeid):
+    return nodeid.replace('/', '.').replace(':', '_')
+
+def emit_event(nodeid, when, outcome, pid):
     append_to_json_list_file('events.json',
-                             {'id': nodeid.replace('/', '.'),
+                             {'id': clean_id(nodeid),
+                              'pid': str(pid),
                               'when': when,
                               'outcome': outcome})
 
 def pytest_runtest_logstart(nodeid, location):
     global session_root
     if session_root != None:
-        emit_event(nodeid.replace('/', '.'), 'start', 'passed')
+        emit_event(nodeid, 'start', 'passed', os.getpid())
 
 def pytest_runtest_logreport(report):
     global session_root
     if session_root != None and root_process:
+        pid = None
+        if hasattr(report, 'node') and hasattr(report.node, 'gateway'):
+            def getpid(channel):
+                import os
+                channel.send(os.getpid())
+            ch = report.node.gateway.remote_exec(getpid)
+            pid = ch.receive()
+        else:
+            pid = os.getpid()
+
         if report.longrepr != None:
-            with open(session_path('%s.txt' % report.nodeid.replace('/', '.')), 'a') as f:
-                header = '%s %s %s' % (report.nodeid, report.when, report.outcome)
+            with open(session_path('%s@%s.txt' % (clean_id(report.nodeid), pid)), 'a') as f:
+                header = '%s [%s] %s %s' % (report.nodeid, pid, report.when, report.outcome)
                 f.write('%s\n' % ('X' * len(header)))
                 f.write('%s\n' % header)
                 f.write('%s\n' % ('v' * len(header)))
                 report.toterminal(py.io.TerminalWriter(f))
-        emit_event(report.nodeid.replace('/', '.'), report.when, report.outcome)
+
+        emit_event(report.nodeid, report.when, report.outcome, pid)
 
 orig_fds = None
 
@@ -113,7 +128,8 @@ def pytest_runtest_setup(item):
     os.dup2(in_fd, 0)
     os.close(in_fd)
 
-    out_fd = os.open(session_path('%s.txt' % item.nodeid.replace('/', '.')),
+    out_fd = os.open(session_path('%s@%s.txt' %
+                                  (clean_id(item.nodeid), os.getpid())),
                      os.O_CREAT | os.O_EXCL | os.O_APPEND | os.O_WRONLY)
     os.dup2(out_fd, 1)
     os.dup2(out_fd, 2)
